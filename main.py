@@ -4,6 +4,7 @@ from supabase import create_client, Client
 import requests
 import os
 import time
+import uvicorn
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -190,3 +191,6 @@ async def debug_latex():
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
+    
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
