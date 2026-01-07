@@ -1,0 +1,44 @@
+# Byte-compiled / optimized / legacy Python files
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+*.egg-info/
+.eggs/
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.env
+
+# Distribution / packaging
+dist/
+build/
+*.whl
+*.egg
+
+# IDE specific files
+.idea/  # For PyCharm
+.vscode/ # For VS Code (can be more specific)
+*.swp
+
+# Testing and debugging
+.pytest_cache/
+.tox/
+.mypy_cache/
+.hypothesis/
+nosetests.xml
+pytest.ini
+
+# Data and Logs
+*.log
+local_settings.py # Consider ignoring sensitive local configuration files
+db.sqlite3 # If using SQLite for local development but not in production
+
+# OS Generated Files
+.DS_Store # macOS
+Thumbs.db # Windows

@@ -1,0 +1,739 @@
+openapi: 3.0.0
+info:
+  title: CV Generator API
+  description: |
+    # 📄 Dynamic CV/Resume Generator API
+    
+    A serverless API that generates professional CV/Resume documents in PDF format from data stored in Supabase.
+    
+    ## 🚀 Key Features
+    - **Dynamic Generation**: CV generated from database in real-time
+    - **Professional Output**: LaTeX-based rendering for publication-quality PDFs
+    - **Serverless Ready**: Designed for Vercel and serverless platforms
+    - **Zero Dependencies**: No local LaTeX installation required
+    
+    ## 📋 Architecture
+    
+    ```
+    User Request
+         ↓
+    FastAPI Endpoint
+         ↓
+    Supabase (PostgreSQL)
+         ↓
+    LaTeX Code Generation
+         ↓
+    GitHub Gist (temporary storage)
+         ↓
+    LaTeX.Online (compilation)
+         ↓
+    PDF Response
+         ↓
+    Clean up Gist
+    ```
+    
+    ## 🔄 Complete Workflow
+    
+    1. **Data Storage**: Education, experience, projects, and certifications stored in Supabase
+    2. **SQL Functions**: Multiple `get_*_latex()` functions assemble LaTeX code
+    3. **Main Function**: `get_latex()` combines all sections into complete document
+    4. **API Processing**: Receives LaTeX code and initiates compilation
+    5. **Compilation**: Uses GitHub Gist + LaTeX.Online (no server setup needed)
+    6. **Delivery**: Returns compiled PDF to user
+    7. **Cleanup**: Removes temporary Gist automatically
+    
+    ## 📦 Technology Stack
+    
+    | Component | Technology |
+    |-----------|-----------|
+    | **Backend** | FastAPI + Python 3.11+ |
+    | **Database** | Supabase (PostgreSQL) |
+    | **LaTeX Compiler** | LaTeX.Online |
+    | **Temporary Storage** | GitHub Gist API |
+    | **Deployment** | Vercel, Railway, Render |
+    
+    ## 🔐 Authentication
+    
+    This API uses environment variables for configuration:
+    - `SUPABASE_URL`: Your Supabase project URL
+    - `SUPABASE_ANON_KEY`: Supabase anonymous key
+    - `GITHUB_TOKEN`: GitHub personal access token (gist scope only)
+    
+    No API key required for clients - all authentication is server-side.
+    
+    ## ⏱️ Performance
+    
+    | Metric | Value |
+    |--------|-------|
+    | Average Response Time | 5-10 seconds |
+    | Maximum Timeout | 60 seconds |
+    | PDF Size | 50-200 KB (typical) |
+    | Gist Cleanup | Automatic |
+    
+    ## 🔗 Related Resources
+    
+    - [Supabase Documentation](https://supabase.com/docs)
+    - [LaTeX.Online](https://latexonline.cc)
+    - [GitHub Gist API](https://docs.github.com/en/rest/gists)
+    - [FastAPI Documentation](https://fastapi.tiangolo.com)
+
+  version: "1.0.0"
+  contact:
+    name: Maria Jose Jara Herrera
+    url: https://portfolio-storychara.vercel.app
+    email: jaraherreramariajose@gmail.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://cv-generator.vercel.app
+    description: Production server
+  - url: http://localhost:8000
+    description: Development server (local)
+  - url: https://your-deployment.vercel.app
+    description: Your custom deployment
+
+tags:
+  - name: General
+    description: General API information and root endpoints
+  - name: CV Generation
+    description: Endpoints for generating and managing CV PDFs
+  - name: Monitoring
+    description: Health checks and API status monitoring
+  - name: Testing
+    description: Testing and debugging endpoints
+  - name: Debugging
+    description: Debugging tools for LaTeX code inspection
+
+paths:
+  /:
+    get:
+      tags:
+        - General
+      summary: Get API Information
+      description: Returns general information about the API, available endpoints, and documentation links.
+      operationId: getApiInfo
+      responses:
+        "200":
+          description: API information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiInfoResponse"
+              examples:
+                success:
+                  summary: Successful API info response
+                  value:
+                    message: CV Generator API
+                    version: "1.0.0"
+                    endpoints:
+                      GET /: Información de la API
+                      GET /generate-cv: Genera y descarga el CV en PDF
+                      GET /health: Verifica el estado de la API
+                      GET /test-compile: Prueba compilación LaTeX
+                      GET /debug-latex: Muestra código LaTeX generado
+                    docs: /docs
+                    redoc: /redoc
+
+  /health:
+    get:
+      tags:
+        - Monitoring
+      summary: Health Check
+      description: |
+        Performs a comprehensive health check of the API and verifies connectivity to external services.
+        
+        ## What it checks:
+        - API responsiveness
+        - Supabase database connection
+        - LaTeX code generation capability
+        - Overall system health
+        
+        ## Use cases:
+        - Continuous monitoring and uptime tracking
+        - Load balancer health checks
+        - Deployment verification
+        - CI/CD pipeline validation
+        
+        ## Response time:
+        - Typical: 1-2 seconds
+        - Maximum: 5 seconds
+      operationId: healthCheck
+      responses:
+        "200":
+          description: API is healthy and all services are connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthCheckResponse"
+              examples:
+                healthy:
+                  summary: All systems operational
+                  value:
+                    status: ok
+                    supabase: connected
+                    latex_length: 15847
+                    timestamp: 1704067200.123456
+        "503":
+          description: One or more services are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthCheckErrorResponse"
+              examples:
+                supabaseDown:
+                  summary: Supabase connection failed
+                  value:
+                    status: error
+                    message: Connection refused to Supabase
+                    timestamp: 1704067200.123456
+
+  /generate-cv:
+    get:
+      tags:
+        - CV Generation
+      summary: Generate CV PDF
+      description: |
+        ## 📄 Main endpoint for generating the complete CV in PDF format
+        
+        This is the primary endpoint of the API. It generates a professional, publication-quality CV in PDF format
+        based on data stored in your Supabase database.
+        
+        ## Complete process flow:
+        
+        1. **Data Retrieval**: Calls `get_latex()` function in Supabase
+        2. **LaTeX Assembly**: Receives complete LaTeX code with all CV sections
+        3. **Gist Creation**: Creates temporary GitHub Gist with LaTeX code
+        4. **Compilation**: Sends Gist URL to LaTeX.Online for compilation
+        5. **PDF Generation**: Receives compiled PDF binary
+        6. **Delivery**: Streams PDF to client for download
+        7. **Cleanup**: Automatically removes temporary Gist
+        
+        ## CV Sections Included:
+        - Header (name, contact info, links)
+        - Professional Profile
+        - Education
+        - Work Experience
+        - Projects & Portfolio
+        - Certifications & Courses
+        - Technical Skills
+        
+        ## Performance Characteristics:
+        - **Average latency**: 5-10 seconds
+        - **P95 latency**: 15 seconds
+        - **Maximum timeout**: 60 seconds
+        - **PDF size**: 50-200 KB
+        
+        ## Usage Examples:
+        
+        ### Command Line (curl):
+        ```bash
+        curl -X GET "https://your-api.vercel.app/generate-cv" \
+          -H "Accept: application/pdf" \
+          -o "my_cv.pdf"
+        ```
+        
+        ### Using wget:
+        ```bash
+        wget "https://your-api.vercel.app/generate-cv" \
+          -O "cv.pdf"
+        ```
+        
+        ### JavaScript/Fetch:
+        ```javascript
+        fetch('https://your-api.vercel.app/generate-cv')
+          .then(response => response.blob())
+          .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'CV.pdf';
+            link.click();
+            window.URL.revokeObjectURL(url);
+          })
+          .catch(error => console.error('Error:', error));
+        ```
+        
+        ### Python:
+        ```python
+        import requests
+        
+        response = requests.get('https://your-api.vercel.app/generate-cv')
+        
+        if response.status_code == 200:
+            with open('cv.pdf', 'wb') as f:
+                f.write(response.content)
+            print('CV downloaded successfully!')
+        else:
+            print(f'Error: {response.status_code}')
+        ```
+        
+        ## Common Error Scenarios and Solutions:
+        
+        | Status | Error | Solution |
+        |--------|-------|----------|
+        | 500 | `get_latex() no devolvió datos` | Check database connection and SQL functions |
+        | 400 | LaTeX compilation failed | Verify LaTeX syntax in Supabase functions |
+        | 504 | Timeout | CV is too large; optimize SQL queries |
+        | 500 | GITHUB_TOKEN not configured | Set GITHUB_TOKEN in environment variables |
+        
+      operationId: generateCv
+      responses:
+        "200":
+          description: CV PDF generated and compiled successfully
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+              example: "%PDF-1.4\n1 0 obj\n..."
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: "Attachment with filename: CV.pdf"
+              example: attachment; filename=CV.pdf
+            Content-Length:
+              schema:
+                type: integer
+              description: Size of PDF in bytes
+              example: 125437
+        "400":
+          description: LaTeX compilation failed - syntax error in generated code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                compilationError:
+                  summary: LaTeX compilation syntax error
+                  value:
+                    detail: "LaTeX compilation failed. Status: 400. Response: /tmp/document.tex:45: error: Undefined control sequence. Gist URL: https://gist.githubusercontent.com/.../document.tex"
+        "500":
+          description: Internal server error - database or system failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                databaseError:
+                  summary: Database connection error
+                  value:
+                    detail: La función get_latex() no devolvió datos
+                githubError:
+                  summary: GitHub Gist creation failed
+                  value:
+                    detail: "Error creando Gist: {\"message\": \"Bad credentials\", \"documentation_url\": \"...\"}"
+                configError:
+                  summary: Missing environment configuration
+                  value:
+                    detail: GITHUB_TOKEN no configurado
+
+  /test-compile:
+    get:
+      tags:
+        - Testing
+      summary: Test LaTeX Compilation
+      description: |
+        ## 🧪 Lightweight testing endpoint for LaTeX compilation pipeline
+        
+        Generates a minimal PDF with "Hello World!" to verify that the entire compilation
+        and delivery pipeline is functioning correctly without requiring a full CV generation.
+        
+        ## Primary Uses:
+        1. **Sanity Testing**: Verify LaTeX.Online is accessible
+        2. **GitHub Integration**: Test GitHub Gist API connectivity
+        3. **Configuration Validation**: Check GITHUB_TOKEN is properly set
+        4. **Pipeline Debugging**: Isolate issues in compilation process
+        5. **Load Testing**: Lightweight endpoint for performance testing
+        6. **Deployment Verification**: Confirm successful deployment
+        
+        ## LaTeX Code Used:
+        ```latex
+        \documentclass{article}
+        \begin{document}
+        Hello World!
+        \end{document}
+        ```
+        
+        ## Response Time:
+        - Typical: 3-5 seconds
+        - Maximum: 60 seconds
+        
+        ## When to use:
+        - After deployment to verify all services are connected
+        - When troubleshooting CV generation failures
+        - In automated monitoring/alerting systems
+        - During CI/CD pipeline validation
+        - Before attempting full CV generation
+        
+        ## Example Response:
+        Simple PDF containing only "Hello World!" text
+        
+        ## Troubleshooting:
+        - **Fails**: Check GITHUB_TOKEN, LaTeX.Online status
+        - **Succeeds but main CV fails**: Issue is in LaTeX code generation, check `/debug-latex`
+        - **Slow**: Network latency; LaTeX.Online may be under load
+      
+      operationId: testCompile
+      responses:
+        "200":
+          description: Test PDF compiled and generated successfully
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+              example: "%PDF-1.4\n1 0 obj\n..."
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: Attachment with filename
+              example: attachment; filename=test.pdf
+        "400":
+          description: LaTeX compilation failed even with minimal code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                compilationFailed:
+                  summary: LaTeX.Online service error
+                  value:
+                    error: "LaTeX.Online returned status 400"
+        "500":
+          description: Server error in compilation pipeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                gistCreationFailed:
+                  summary: Cannot create GitHub Gist
+                  value:
+                    error: "Error creando Gist: Invalid GitHub token"
+
+  /debug-latex:
+    get:
+      tags:
+        - Debugging
+      summary: Debug LaTeX Code
+      description: |
+        ## 🐛 Advanced debugging endpoint for LaTeX code inspection
+        
+        Returns the raw LaTeX code that would be compiled without actually compiling it.
+        Extremely useful for identifying syntax errors, verifying data insertion, and 
+        understanding the CV structure before PDF generation.
+        
+        ## What this endpoint does:
+        1. Calls `get_latex()` function in Supabase
+        2. Returns the complete LaTeX source code as JSON
+        3. Includes metadata about the code (length, type, preview)
+        
+        ## Use Cases:
+        
+        ### 1. LaTeX Syntax Validation
+        ```bash
+        curl https://your-api.vercel.app/debug-latex | jq '.data' > cv.tex
+        pdflatex cv.tex  # Test locally
+        ```
+        
+        ### 2. Data Verification
+        Check that education, experience, and projects are correctly formatted:
+        ```javascript
+        fetch('/debug-latex')
+          .then(r => r.json())
+          .then(data => {
+            console.log('CV includes these keywords:');
+            console.log('Education sections:', (data.data.match(/\\resumeSubheading/g) || []).length);
+            console.log('Experience items:', (data.data.match(/\\resumeItem/g) || []).length);
+          });
+        ```
+        
+        ### 3. Database Query Testing
+        If the output is empty or incorrect, check your Supabase functions:
+        ```bash
+        # In Supabase SQL Editor
+        SELECT get_latex();
+        SELECT get_education_latex();
+        SELECT get_experience_latex();
+        ```
+        
+        ### 4. Integration Debugging
+        Useful in CI/CD pipelines to catch issues early:
+        ```bash
+        LATEX_CODE=$(curl -s /debug-latex | jq -r '.data')
+        
+        if [ -z "$LATEX_CODE" ]; then
+          echo "ERROR: No LaTeX code generated"
+          exit 1
+        fi
+        
+        if ! grep -q "\\\\documentclass" <<< "$LATEX_CODE"; then
+          echo "ERROR: Invalid LaTeX structure"
+          exit 1
+        fi
+        ```
+        
+        ## Response Fields:
+        - **success**: Boolean indicating if query succeeded
+        - **data**: Complete LaTeX source code
+        - **data_type**: Python type of returned data (should be "str")
+        - **length**: Total character count of LaTeX code
+        - **preview**: First 500 characters for quick inspection
+        
+        ## Common Issues and Solutions:
+        
+        | Problem | Cause | Solution |
+        |---------|-------|----------|
+        | Empty `data` field | No CV data in database | Insert data into education/experience/projects tables |
+        | Malformed LaTeX | SQL function has syntax error | Check `get_latex()` function in Supabase |
+        | Missing sections | `get_*_latex()` returning NULL | Use COALESCE in main function |
+        | Special character errors | Unescaped underscores/ampersands | Use `replace()` in SQL to escape LaTeX special chars |
+        
+        ## Performance:
+        - Response time: 1-2 seconds
+        - No compilation overhead
+        - Safe to call frequently for testing
+        
+        ## Example Workflow:
+        ```
+        1. Check /debug-latex output
+        2. Review LaTeX structure
+        3. If correct, call /generate-cv
+        4. If incorrect, debug Supabase functions
+        5. Repeat until output is correct
+        ```
+      
+      operationId: debugLatex
+      responses:
+        "200":
+          description: LaTeX code successfully retrieved from Supabase
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DebugLatexResponse"
+              examples:
+                success:
+                  summary: Complete CV LaTeX code retrieved
+                  value:
+                    success: true
+                    data: "\\documentclass[letterpaper,10pt]{article}\n\n\\usepackage{latexsym}\n\\usepackage[empty]{fullpage}\n\\usepackage{titlesec}\n..."
+                    data_type: str
+                    length: 15847
+                    preview: "\\documentclass[letterpaper,10pt]{article}\n\n\\usepackage{latexsym}\n\\usepackage[empty]{fullpage}\n\\usepackage{titlesec}..."
+        "500":
+          description: Error retrieving LaTeX code from database
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DebugLatexErrorResponse"
+              examples:
+                databaseError:
+                  summary: Supabase connection failed
+                  value:
+                    success: false
+                    error: Connection refused to Supabase. Check SUPABASE_URL and SUPABASE_ANON_KEY.
+                queryError:
+                  summary: SQL function error
+                  value:
+                    success: false
+                    error: "function get_latex() does not exist. Check Supabase for function definition."
+                emptyResult:
+                  summary: No CV data in database
+                  value:
+                    success: false
+                    error: "get_latex() returned NULL. Ensure education/experience/projects tables have data."
+
+components:
+  schemas:
+    ApiInfoResponse:
+      type: object
+      title: API Information Response
+      description: General information about the CV Generator API
+      properties:
+        message:
+          type: string
+          example: CV Generator API
+          description: Welcome message
+        version:
+          type: string
+          example: "1.0.0"
+          description: API version using semantic versioning
+        endpoints:
+          type: object
+          description: Available endpoints and their descriptions
+          properties:
+            "GET /":
+              type: string
+              example: Información de la API
+            "GET /generate-cv":
+              type: string
+              example: Genera y descarga el CV en PDF
+            "GET /health":
+              type: string
+              example: Verifica el estado de la API
+            "GET /test-compile":
+              type: string
+              example: Prueba compilación LaTeX
+            "GET /debug-latex":
+              type: string
+              example: Muestra código LaTeX generado
+        docs:
+          type: string
+          example: /docs
+          description: Path to interactive Swagger documentation
+        redoc:
+          type: string
+          example: /redoc
+          description: Path to ReDoc documentation
+
+    HealthCheckResponse:
+      type: object
+      title: Healthy Status Response
+      description: Response when all systems are operational
+      required:
+        - status
+        - supabase
+        - latex_length
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+          description: Overall API status
+        supabase:
+          type: string
+          enum: [connected]
+          example: connected
+          description: Supabase database connection status
+        latex_length:
+          type: integer
+          example: 15847
+          description: Length of generated LaTeX code in characters
+        timestamp:
+          type: number
+          format: float
+          example: 1704067200.123456
+          description: Unix timestamp when check was performed
+
+    HealthCheckErrorResponse:
+      type: object
+      title: Health Check Error Response
+      description: Response when one or more services are unavailable
+      required:
+        - status
+        - message
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [error]
+          example: error
+          description: Status indicating failure
+        message:
+          type: string
+          example: Connection refused to Supabase
+          description: Detailed error message
+        timestamp:
+          type: number
+          format: float
+          example: 1704067200.123456
+          description: Unix timestamp when error occurred
+
+    ErrorResponse:
+      type: object
+      title: Error Response
+      description: Standard error response format
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          example: "LaTeX compilation failed. Status: 400."
+          description: Detailed error message with context
+
+    DebugLatexResponse:
+      type: object
+      title: Debug LaTeX Success Response
+      description: Complete LaTeX source code for inspection and debugging
+      required:
+        - success
+        - data
+        - data_type
+        - length
+        - preview
+      properties:
+        success:
+          type: boolean
+          example: true
+          description: Indicates successful LaTeX code retrieval
+        data:
+          type: string
+          description: Complete LaTeX source code for the CV
+          example: "\\documentclass[letterpaper,10pt]{article}\n\n\\usepackage{latexsym}\n..."
+        data_type:
+          type: string
+          example: str
+          description: Python data type of the returned code
+        length:
+          type: integer
+          example: 15847
+          description: Total character count of LaTeX code
+        preview:
+          type: string
+          description: First 500 characters of LaTeX code for quick inspection
+          example: "\\documentclass[letterpaper,10pt]{article}\n\n\\usepackage{latexsym}\n\\usepackage[empty]{fullpage}..."
+
+    DebugLatexErrorResponse:
+      type: object
+      title: Debug LaTeX Error Response
+      description: Error response when LaTeX code cannot be retrieved
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+          description: Indicates failure to retrieve LaTeX code
+        error:
+          type: string
+          example: "Connection refused to Supabase"
+          description: Detailed error explanation and possible solutions
+
+  responses:
+    UnauthorizedError:
+      description: API key missing or invalid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFoundError:
+      description: Requested resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ServiceUnavailableError:
+      description: Service temporarily unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+x-apiStatus: production
+x-apiTier: free
+x-apiRateLimit: unlimited
