@@ -1,15 +1,25 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from supabase import create_client, Client
 import requests
 import os
 import time
-import uvicorn
-from dotenv import load_dotenv
 
-load_dotenv()
+app = FastAPI(title="CV Generator API", version="1.0.0")
 
-app = FastAPI()
+# Configurar CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "https://portfolio-storychara.vercel.app",
+        "*"  # Para testing, luego restringe
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"],
+)
 
 # Configuración de Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -17,8 +27,6 @@ SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-import time
 
 def compile_latex_to_pdf(latex_code: str) -> bytes:
     """
@@ -63,10 +71,8 @@ def compile_latex_to_pdf(latex_code: str) -> bytes:
     raw_url = gist['files']['document.tex']['raw_url']
     
     try:
-        # ⚠️ IMPORTANTE: Esperar a que GitHub procese el Gist
         time.sleep(2)
         
-        # Verificar que el archivo sea accesible
         check_response = requests.get(raw_url, timeout=5)
         if check_response.status_code != 200:
             raise HTTPException(
@@ -74,73 +80,37 @@ def compile_latex_to_pdf(latex_code: str) -> bytes:
                 detail=f"Gist no accesible: {check_response.status_code}"
             )
         
-        # Compilar con LaTeX.Online
         compile_url = f"https://latexonline.cc/compile?url={raw_url}"
         pdf_response = requests.get(compile_url, timeout=60)
         
         if pdf_response.status_code != 200:
-            # Guardar más info del error
             raise HTTPException(
                 status_code=400, 
-                detail=f"LaTeX compilation failed. Status: {pdf_response.status_code}. "
-                       f"Response: {pdf_response.text[:200]}. "
-                       f"Gist URL: {raw_url}"
+                detail=f"LaTeX compilation failed. Status: {pdf_response.status_code}."
             )
         
         return pdf_response.content
         
     finally:
-        # Eliminar Gist después de compilar
         requests.delete(
             f"https://api.github.com/gists/{gist_id}",
             headers={"Authorization": f"token {GITHUB_TOKEN}"},
             timeout=10
         )
 
-
-@app.get("/generate-cv")
-async def generate_cv():
-    """
-    Endpoint principal: genera el CV en PDF desde la BD
-    """
-    try:
-        # 1. Llamar a la función de Supabase
-        response = supabase.rpc('get_latex').execute()
-        
-        if not response.data:
-            raise HTTPException(
-                status_code=500, 
-                detail="La función get_latex() no devolvió datos"
-            )
-        
-        latex_code = response.data
-        print("LaTeX code length:", len(latex_code))
-        
-        # 2. Compilar LaTeX a PDF
-        pdf_content = compile_latex_to_pdf(latex_code)
-        
-        # 3. Devolver el PDF
-        return StreamingResponse(
-            iter([pdf_content]),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": "attachment; filename=CV.pdf"
-            }
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/")
 async def root():
     return {
         "message": "CV Generator API",
+        "version": "1.0.0",
         "endpoints": {
-            "POST /generate-cv": "Genera el CV en PDF desde la base de datos"
+            "GET /": "API Information",
+            "GET /generate-cv": "Generate CV PDF",
+            "GET /health": "Health check",
+            "GET /test-compile": "Test LaTeX compilation",
+            "GET /debug-latex": "Debug LaTeX code"
         }
     }
-
 
 @app.get("/health")
 async def health_check():
@@ -154,12 +124,36 @@ async def health_check():
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
-    
+
+@app.get("/generate-cv")
+async def generate_cv():
+    """Endpoint principal: genera el CV en PDF desde la BD"""
+    try:
+        response = supabase.rpc('get_latex').execute()
+        
+        if not response.data:
+            raise HTTPException(
+                status_code=500, 
+                detail="La función get_latex() no devolvió datos"
+            )
+        
+        latex_code = response.data
+        pdf_content = compile_latex_to_pdf(latex_code)
+        
+        return StreamingResponse(
+            iter([pdf_content]),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": "attachment; filename=CV.pdf"
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/test-compile")
 async def test_compile():
-    """
-    Prueba la compilación con código LaTeX mínimo
-    """
+    """Prueba la compilación con código LaTeX mínimo"""
     simple_latex = r"""\documentclass{article}
 \begin{document}
 Hello World!
@@ -174,12 +168,10 @@ Hello World!
         )
     except Exception as e:
         return {"error": str(e)}
-    
+
 @app.get("/debug-latex")
 async def debug_latex():
-    """
-    Endpoint temporal para ver qué devuelve get_latex()
-    """
+    """Endpoint temporal para ver qué devuelve get_latex()"""
     try:
         response = supabase.rpc('get_latex').execute()
         
@@ -191,6 +183,8 @@ async def debug_latex():
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
-    
+
+# Para Vercel
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
