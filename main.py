@@ -144,7 +144,7 @@ async def generate_cv():
             iter([pdf_content]),
             media_type="application/pdf",
             headers={
-                "Content-Disposition": "attachment; filename=CV.pdf"
+                "Content-Disposition": "inline; filename=CV.pdf"
             }
         )
         
